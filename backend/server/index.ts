@@ -13,7 +13,17 @@ import {
 } from './google-sheets.js';
 
 const app = express();
-app.use(cors());
+
+app.use(cors({
+  origin: [
+    "http://localhost:5173",          // para desarrollo local
+    "https://cosmos-asistencia.vercel.app"  // para producción en Vercel
+  ],
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type"]
+}));
+
+
 app.use(express.json());
 
 // Health check: confirma que las credenciales estén bien cargadas
