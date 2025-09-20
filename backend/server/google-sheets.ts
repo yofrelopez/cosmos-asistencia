@@ -206,22 +206,28 @@ export async function syncRecordToGoogleSheets(record: AttendanceRecord): Promis
 
 
 
-// Formatos de fecha/hora (forzar America/Lima sin depender de ICU del sistema)
-const dUTC = new Date(record.timestamp);               // ms UTC
-const limaOffsetMs = 5 * 60 * 60 * 1000;               // Perú = UTC-5 todo el año (sin DST)
-const dLima = new Date(dUTC.getTime() - limaOffsetMs); // "simula" hora local de Lima
+// Formatos de fecha/hora (forzar UTC-5 / Lima)
+const dUTC = new Date(record.timestamp);
 
-const pad = (n: number) => String(n).padStart(2, "0");
-const yyyy = dLima.getUTCFullYear();
-const mm   = pad(dLima.getUTCMonth() + 1);
-const dd   = pad(dLima.getUTCDate());
-const HH   = pad(dLima.getUTCHours());
-const MM   = pad(dLima.getUTCMinutes());
-const SS   = pad(dLima.getUTCSeconds());
+// obtenemos la hora local de Lima usando Intl.DateTimeFormat
+const fmtFecha = new Intl.DateTimeFormat("es-PE", {
+  timeZone: "America/Lima",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric"
+});
 
-const fecha = `${dd}/${mm}/${yyyy}`; // dd/mm/yyyy
-const hora  = `${HH}:${MM}:${SS}`;   // hh:mm:ss
-const isoTs = dUTC.toISOString();    // dejamos el ISO en UTC
+const fmtHora = new Intl.DateTimeFormat("es-PE", {
+  timeZone: "America/Lima",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: true
+});
+
+const fecha = fmtFecha.format(dUTC);
+const hora  = fmtHora.format(dUTC);
+const isoTs = dUTC.toISOString(); // guardamos también el ISO en UTC
 
 
 
