@@ -204,26 +204,28 @@ export async function syncRecordToGoogleSheets(record: AttendanceRecord): Promis
     const { sheets } = await getApis();
     const { detailedId, sunafilId } = await ensureSheets(year);
 
-    // Formatos de fecha/hora
-    const d = new Date(record.timestamp);
-
-const fecha = d.toLocaleDateString("es-PE", {
-  timeZone: "America/Lima",
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric"
-});
-
-const hora = d.toLocaleTimeString("es-PE", {
-  timeZone: "America/Lima",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit"
-});
 
 
+// Formatos de fecha/hora (forzar America/Lima sin depender de ICU del sistema)
+const dUTC = new Date(record.timestamp);               // ms UTC
+const limaOffsetMs = 5 * 60 * 60 * 1000;               // Perú = UTC-5 todo el año (sin DST)
+const dLima = new Date(dUTC.getTime() - limaOffsetMs); // "simula" hora local de Lima
 
-    const isoTs = d.toISOString();
+const pad = (n: number) => String(n).padStart(2, "0");
+const yyyy = dLima.getUTCFullYear();
+const mm   = pad(dLima.getUTCMonth() + 1);
+const dd   = pad(dLima.getUTCDate());
+const HH   = pad(dLima.getUTCHours());
+const MM   = pad(dLima.getUTCMinutes());
+const SS   = pad(dLima.getUTCSeconds());
+
+const fecha = `${dd}/${mm}/${yyyy}`; // dd/mm/yyyy
+const hora  = `${HH}:${MM}:${SS}`;   // hh:mm:ss
+const isoTs = dUTC.toISOString();    // dejamos el ISO en UTC
+
+
+
+
 
     // 1) Guardar en DETALLE
     await sheets.spreadsheets.values.append({
