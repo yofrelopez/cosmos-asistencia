@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: cosmos-backend
+    env: node
+    rootDirectory: backend
+    buildCommand: pnpm install && pnpm build
+    startCommand: pnpm start
+    autoDeploy: true
+    envVars:
+      - key: GOOGLE_CLIENT_EMAIL
+        sync: false
+      - key: GOOGLE_PRIVATE_KEY
+        sync: false
+      - key: GOOGLE_DRIVE_FOLDER_ID
+        sync: false
+      - key: GOOGLE_DETAILED_SHEET_ID
+        sync: false
+      - key: GOOGLE_SUNAFIL_SHEET_ID
+        sync: false
