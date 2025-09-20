@@ -206,8 +206,23 @@ export async function syncRecordToGoogleSheets(record: AttendanceRecord): Promis
 
     // Formatos de fecha/hora
     const d = new Date(record.timestamp);
-    const fecha = d.toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric" });
-    const hora = d.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+const fecha = d.toLocaleDateString("es-PE", {
+  timeZone: "America/Lima",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric"
+});
+
+const hora = d.toLocaleTimeString("es-PE", {
+  timeZone: "America/Lima",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit"
+});
+
+
+
     const isoTs = d.toISOString();
 
     // 1) Guardar en DETALLE

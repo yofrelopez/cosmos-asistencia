@@ -10,6 +10,7 @@ const SYNC_ALL_API_URL = `${API_BASE}/api/sync-all`;
 
 
 
+
 // NUEVO: clave para cola de sincronización pendiente
 const PENDING_KEY = 'cosmos_pending_sync';
 
