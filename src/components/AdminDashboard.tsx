@@ -1,115 +1,147 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  Users, 
-  Clock, 
-  Calendar, 
-  FileText, 
-  Download, 
+import React, { useEffect, useMemo, useState } from "react";
+
+
+import { useNavigate } from "react-router-dom"; // 🔹 importa esto
+
+
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Users,
+  Clock,
+  Calendar,
+  FileText,
+  Download,
   Upload,
   RefreshCw,
   LogOutIcon,
   TrendingUp,
   AlertCircle,
   CheckCircle,
-  Settings
-} from 'lucide-react';
-import { clearSession } from '@/lib/auth';
-import { getAllRecords, getRecordsStatistics, exportRecordsAsJSON } from '@/lib/storage';
-import { manualSyncAllRecords, retryPendingSync, getSyncStatus } from "@/lib/storage";
-import { toast } from 'sonner';
-import CompanyHeader from './CompanyHeader';
-import WorkerManagement from './WorkerManagement';
-import { SessionProps } from '@/lib/types';
+  Settings,
+  History,
+} from "lucide-react";
+import { clearSession } from "@/lib/auth";
+import { toast } from "sonner";
+import CompanyHeader from "./CompanyHeader";
+import WorkerManagement from "./WorkerManagement";
+import { SessionProps } from "@/lib/types";
+
+// 🔹 Modelo unificado de asistencia
+import type { AttendanceRecord } from "@/lib/attendance-cosmos";
+import { EVENT_TYPES } from "@/lib/attendance-cosmos";
+
+// 🔹 Firestore en tiempo real
+import { db } from "@/lib/firebase";
+import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 
 export default function AdminDashboard({ session, onLogout }: SessionProps) {
-  const [records, setRecords] = useState(getAllRecords());
-  const [stats, setStats] = useState(getRecordsStatistics());
-  const [syncStatus, setSyncStatus] = useState(getSyncStatus());
+
+  const navigate = useNavigate(); // 🔹 inicializa el hook
+
+  const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [isManualSyncing, setIsManualSyncing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
+  // 🔸 Suscripción en tiempo real a Firestore (attendance)
   useEffect(() => {
-    // Refresh data every 30 seconds
-    const interval = setInterval(() => {
-      setRecords(getAllRecords());
-      setStats(getRecordsStatistics());
-      setSyncStatus(getSyncStatus());
-    }, 30000);
-
-    return () => clearInterval(interval);
+    const q = query(collection(db, "attendance"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const rows = snap.docs.map((d) => ({ ...(d.data() as AttendanceRecord) }));
+        setRecords(rows);
+        setLastSyncTime(new Date());
+      },
+      (err) => {
+        console.error("Error listening attendance:", err);
+        toast.error("Error al cargar registros desde Firestore");
+      }
+    );
+    return () => unsub();
   }, []);
 
+  // 🔸 Stats calculadas desde records
+  const stats = useMemo(() => {
+    const today = new Date().toISOString().split("T")[0];
+    const thisMonth = today.substring(0, 7); // YYYY-MM
+    const total = records.length;
+    const todayCount = records.filter((r) => r.date === today).length;
+    const monthCount = records.filter((r) => r.date?.startsWith(thisMonth)).length;
+    const byEventType = {
+      ENTRADA: records.filter((r) => r.eventType === EVENT_TYPES.ENTRADA).length,
+      REFRIGERIO: records.filter((r) => r.eventType === EVENT_TYPES.REFRIGERIO).length,
+      TERMINO_REFRIGERIO: records.filter((r) => r.eventType === EVENT_TYPES.TERMINO_REFRIGERIO).length,
+      SALIDA: records.filter((r) => r.eventType === EVENT_TYPES.SALIDA).length,
+    };
+    return { total, today: todayCount, thisMonth: monthCount, byEventType };
+  }, [records]);
+
+  // 🔸 Estado “similar” al de sync con Sheets, adaptado a Firestore
+  const syncStatus = useMemo(() => {
+    return {
+      totalRecords: records.length,
+      failedSyncs: 0,
+      lastSyncAttempt: lastSyncTime ? lastSyncTime.toISOString() : null,
+    };
+  }, [records.length, lastSyncTime]);
+
+  // ========== Acciones de UI ==========
   const handleLogout = () => {
     clearSession();
     onLogout();
-    toast.info('Sesión de administrador cerrada');
+    toast.info("Sesión de administrador cerrada");
   };
 
   const handleExportData = () => {
     try {
-      const jsonData = exportRecordsAsJSON();
-      const blob = new Blob([jsonData], { type: 'application/json' });
+      const exportData = {
+        exportDate: new Date().toISOString(),
+        totalRecords: records.length,
+        records,
+      };
+      const jsonData = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonData], { type: "application/json" });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
-      a.download = `asistencia-cosmos-${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `asistencia-cosmos-${new Date().toISOString().split("T")[0]}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast.success('Datos exportados correctamente');
+      toast.success("Datos exportados correctamente");
     } catch (error) {
-      toast.error('Error al exportar datos');
-      console.error('Export error:', error);
+      toast.error("Error al exportar datos");
+      console.error("Export error:", error);
     }
   };
 
   const handleManualSync = async () => {
     setIsManualSyncing(true);
-    
     try {
-      await manualSyncAllRecords();
+      await new Promise((r) => setTimeout(r, 700));
       setLastSyncTime(new Date());
-      setSyncStatus(getSyncStatus());
-      toast.success('Sincronización manual completada', {
-        description: 'Todos los registros se han sincronizado con Google Sheets'
-      });
-    } catch (error) {
-      console.error('Manual sync error:', error);
-      toast.error('Error en la sincronización manual', {
-        description: 'Algunos registros pueden no haberse sincronizado'
-      });
+      toast.info("Firestore ya sincroniza en tiempo real");
     } finally {
       setIsManualSyncing(false);
     }
   };
 
   const handleRetryFailedSyncs = async () => {
-    try {
-      await retryPendingSync();
-      setSyncStatus(getSyncStatus());
-      toast.success('Reintento de sincronización completado');
-    } catch (error) {
-      console.error('Retry failed syncs error:', error);
-      toast.error('Error al reintentar sincronización');
-    }
+    toast.info("No hay pendientes: Firestore en tiempo real");
   };
 
   const refreshData = () => {
-    setRecords(getAllRecords());
-    setStats(getRecordsStatistics());
-    setSyncStatus(getSyncStatus());
-    toast.success('Datos actualizados');
+    setLastSyncTime(new Date());
+    toast.success("Datos actualizados (tiempo real)");
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-red-50">
       <CompanyHeader />
-      
+
       <div className="container mx-auto p-6">
         <div className="max-w-7xl mx-auto space-y-6">
           {/* Header */}
@@ -184,7 +216,7 @@ export default function AdminDashboard({ session, onLogout }: SessionProps) {
                         <AlertCircle className="h-4 w-4 text-yellow-600" />
                       )}
                       <span className="text-sm">
-                        {syncStatus.failedSyncs === 0 ? 'Sincronizado' : `${syncStatus.failedSyncs} pendientes`}
+                        {syncStatus.failedSyncs === 0 ? "Tiempo real" : `${syncStatus.failedSyncs} pendientes`}
                       </span>
                     </div>
                   </div>
@@ -194,12 +226,12 @@ export default function AdminDashboard({ session, onLogout }: SessionProps) {
             </Card>
           </div>
 
-          {/* Google Sheets Sync Section */}
+          {/* Firestore Sync Section */}
           <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Settings className="h-5 w-5" />
-                Sincronización con Google Sheets
+                Sincronización (Firestore en tiempo real)
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -213,59 +245,40 @@ export default function AdminDashboard({ session, onLogout }: SessionProps) {
                   <p className="text-xl font-bold text-yellow-600">{syncStatus.failedSyncs}</p>
                 </div>
                 <div className="text-center p-4 bg-green-50 rounded-lg">
-                  <p className="text-sm text-gray-600">Última Sincronización</p>
+                  <p className="text-sm text-gray-600">Última Actualización</p>
                   <p className="text-sm text-green-600">
-                    {lastSyncTime ? lastSyncTime.toLocaleString('es-PE') : 'Automática'}
+                    {lastSyncTime ? lastSyncTime.toLocaleString("es-PE") : "Automática"}
                   </p>
                 </div>
               </div>
 
               <div className="flex gap-3 justify-center">
-                <Button 
-                  onClick={handleManualSync}
-                  disabled={isManualSyncing}
-                  className="gap-2"
-                >
+                <Button onClick={handleManualSync} disabled={isManualSyncing} className="gap-2">
                   {isManualSyncing ? (
                     <RefreshCw className="h-4 w-4 animate-spin" />
                   ) : (
                     <Upload className="h-4 w-4" />
                   )}
-                  {isManualSyncing ? 'Sincronizando...' : 'Sincronizar Todo'}
+                  {isManualSyncing ? "Sincronizando..." : "Sincronizar Todo"}
                 </Button>
 
-                {syncStatus.failedSyncs > 0 && (
-                  <Button 
-                    onClick={handleRetryFailedSyncs}
-                    variant="outline"
-                    className="gap-2"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                    Reintentar Fallidos
-                  </Button>
-                )}
+                <Button onClick={handleRetryFailedSyncs} variant="outline" className="gap-2">
+                  <RefreshCw className="h-4 w-4" />
+                  Reintentar Fallidos
+                </Button>
 
-                <Button 
-                  onClick={handleExportData}
-                  variant="outline"
-                  className="gap-2"
-                >
+                <Button onClick={handleExportData} variant="outline" className="gap-2">
                   <Download className="h-4 w-4" />
                   Exportar Datos
                 </Button>
-              </div>
-
-              <div className="text-center text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
-                <p><strong>Nota:</strong> Los registros se sincronizan automáticamente con Google Sheets.</p>
-                <p>Carpeta: <strong>ASISTENCIA-COSMOS</strong> | Archivos: <strong>Registros_Detallados_2024</strong> y <strong>Reporte_SUNAFIL_2024</strong></p>
               </div>
             </CardContent>
           </Card>
 
           {/* Main Content Tabs */}
-          <Tabs defaultValue="attendance" className="space-y-6">
+          <Tabs defaultValue="workers" className="space-y-6">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="attendance" className="gap-2">
+              <TabsTrigger value="history" className="gap-2">
                 <Clock className="h-4 w-4" />
                 Registros de Asistencia
               </TabsTrigger>
@@ -275,45 +288,17 @@ export default function AdminDashboard({ session, onLogout }: SessionProps) {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="attendance">
+            {/* 🔹 Botón para ir al historial completo */}
+            <TabsContent value="history">
               <Card className="shadow-lg">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Clock className="h-5 w-5" />
-                    Registros de Asistencia ({records.length})
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {records.length === 0 ? (
-                      <div className="text-center py-8 text-gray-500">
-                        No hay registros de asistencia disponibles
-                      </div>
-                    ) : (
-                      <div className="grid gap-4">
-                        {records.slice(0, 10).map((record) => (
-                          <div key={record.id} className="flex items-center justify-between p-4 border rounded-lg">
-                            <div className="flex items-center gap-4">
-                              <div className={`w-3 h-3 rounded-full ${
-                                record.eventType === 'ENTRADA' ? 'bg-green-500' :
-                                record.eventType === 'REFRIGERIO' ? 'bg-orange-500' :
-                                record.eventType === 'TERMINO_REFRIGERIO' ? 'bg-blue-500' :
-                                'bg-red-500'
-                              }`}></div>
-                              <div>
-                                <p className="font-medium">{record.workerName}</p>
-                                <p className="text-sm text-gray-500">{record.eventType}</p>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-mono text-sm">{new Date(record.timestamp).toLocaleString('es-PE')}</p>
-                              <p className="text-xs text-gray-500">{record.location}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                <CardContent className="p-6 text-center">
+                  <p className="mb-4 text-gray-700">
+                    Ahora puedes consultar y gestionar los registros en una pantalla exclusiva.
+                  </p>
+                <Button onClick={() => navigate("/history")} className="gap-2">
+                  <FileText className="h-4 w-4" />
+                  Ver Historial Completo
+                </Button>
                 </CardContent>
               </Card>
             </TabsContent>

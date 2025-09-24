@@ -1,4 +1,10 @@
 import { hashPin, verifyPin } from './security';
+import { db } from './firebase';
+import { doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, collection } from 'firebase/firestore';
+
+import {  query, where, limit } from "firebase/firestore";
+
+
 
 export interface Worker {
   id: string;
@@ -9,12 +15,12 @@ export interface Worker {
   document: string;
 }
 
-export interface Admin {
+export type Admin = {
   id: string;
   name: string;
-  pinHash: string;
-  role: 'admin' | 'contador';
-}
+  pin: string;   // texto plano
+  role: string;
+};
 
 export interface AuthSession {
   userId: string;
@@ -24,35 +30,8 @@ export interface AuthSession {
   expiresAt: string;
 }
 
-// Default workers with proper hashed PINs
-export const WORKERS: Worker[] = [
-  {
-    id: '1',
-    name: 'Juan Carlos Pérez',
-    pinHash: '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LeVMF98X8.Rb7qvTG', // 1234
-    photo: '/assets/workers/worker1.jpg',
-    position: 'Técnico Senior',
-    document: '12345678'
-  },
-  {
-    id: '2',
-    name: 'María Elena García',
-    pinHash: '$2b$12$8k1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LeVMF98X8.Rb7qvTH', // 5678
-    photo: '/assets/workers/worker2.jpg',
-    position: 'Especialista en Sistemas',
-    document: '87654321'
-  },
-  {
-    id: '3',
-    name: 'Carlos Antonio López',
-    pinHash: '$2b$12$9m2yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LeVMF98X8.Rb7qvTI', // 9012
-    photo: '/assets/workers/worker3.jpg',
-    position: 'Coordinador de Proyectos',
-    document: '11223344'
-  }
-];
-
-export const ADMINS: Admin[] = [
+// 🔹 Admins siguen siendo locales
+/* export const ADMINS: Admin[] = [
   {
     id: 'admin1',
     name: 'Administrador Principal',
@@ -65,34 +44,30 @@ export const ADMINS: Admin[] = [
     pinHash: '$2b$12$8k1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LeVMF98X8.Rb7qvTH', // 777666
     role: 'contador'
   }
-];
+]; */
 
-// Get current workers from localStorage or default
-export function getCurrentWorkers(): Worker[] {
+// 🔹 Obtener todos los trabajadores desde Firestore
+export async function getCurrentWorkers(): Promise<Worker[]> {
   try {
-    const stored = localStorage.getItem('cosmos_workers');
-    return stored ? JSON.parse(stored) : [...WORKERS];
+    const snapshot = await getDocs(collection(db, 'workers'));
+    return snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data(),
+    })) as Worker[];
   } catch (error) {
     console.error('Error loading workers:', error);
-    return [...WORKERS];
+    return [];
   }
 }
 
-// Save workers to localStorage
-export function saveWorkers(workers: Worker[]): void {
-  try {
-    localStorage.setItem('cosmos_workers', JSON.stringify(workers));
-  } catch (error) {
-    console.error('Error saving workers:', error);
-  }
-}
-
+// 🔹 Validar PIN de trabajador contra Firestore
 export async function validateWorkerPin(workerId: string, pin: string): Promise<boolean> {
-  const workers = getCurrentWorkers();
-  const worker = workers.find(w => w.id === workerId);
-  if (!worker) return false;
-  
   try {
+    const ref = doc(db, 'workers', workerId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return false;
+
+    const worker = snap.data() as Worker;
     return await verifyPin(pin, worker.pinHash);
   } catch (error) {
     console.error('Error validating worker PIN:', error);
@@ -100,18 +75,24 @@ export async function validateWorkerPin(workerId: string, pin: string): Promise<
   }
 }
 
+// 🔹 Validar PIN de administrador 
 export async function validateAdminPin(pin: string): Promise<Admin | null> {
-  for (const admin of ADMINS) {
-    try {
-      const isValid = await verifyPin(pin, admin.pinHash);
-      if (isValid) return admin;
-    } catch (error) {
-      console.error('Error validating admin PIN:', error);
+  try {
+    const snapshot = await getDocs(collection(db, "admins"));
+    for (const docSnap of snapshot.docs) {
+      const admin = docSnap.data() as Admin;
+      if (admin.pin === pin) {
+        return { id: docSnap.id, ...admin };
+      }
     }
+    return null;
+  } catch (error) {
+    console.error("Error validating admin PIN:", error);
+    return null;
   }
-  return null;
 }
 
+// 🔹 Sesiones (siguen en localStorage)
 export function createSession(userId: string, userType: 'worker' | 'admin', userName: string): AuthSession {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 8 * 60 * 60 * 1000); // 8 horas
@@ -156,23 +137,25 @@ export function isSessionValid(): boolean {
   return getSession() !== null;
 }
 
-export function getWorkerById(id: string): Worker | undefined {
-  const workers = getCurrentWorkers();
-  return workers.find(w => w.id === id);
+// 🔹 Obtener un trabajador por ID desde Firestore
+export async function getWorkerById(id: string): Promise<Worker | null> {
+  try {
+    const ref = doc(db, 'workers', id);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return null;
+    return { id: snap.id, ...snap.data() } as Worker;
+  } catch (error) {
+    console.error('Error obteniendo worker por id:', error);
+    return null;
+  }
 }
 
-// Admin-only functions for worker management
+// 🔹 Actualizar PIN en Firestore
 export async function updateWorkerPin(workerId: string, newPin: string): Promise<boolean> {
   try {
-    const workers = getCurrentWorkers();
-    const workerIndex = workers.findIndex(w => w.id === workerId);
-    
-    if (workerIndex === -1) return false;
-    
     const hashedPin = await hashPin(newPin);
-    workers[workerIndex].pinHash = hashedPin;
-    
-    saveWorkers(workers);
+    const ref = doc(db, 'workers', workerId);
+    await updateDoc(ref, { pinHash: hashedPin });
     return true;
   } catch (error) {
     console.error('Error updating worker PIN:', error);
@@ -180,36 +163,27 @@ export async function updateWorkerPin(workerId: string, newPin: string): Promise
   }
 }
 
+// 🔹 Crear trabajador en Firestore
 export async function createWorker(workerData: Omit<Worker, 'id' | 'pinHash'> & { pin: string }): Promise<Worker | null> {
   try {
     const hashedPin = await hashPin(workerData.pin);
-    const newWorker: Worker = {
+    const newWorker = {
       ...workerData,
-      id: Date.now().toString(),
-      pinHash: hashedPin
+      pinHash: hashedPin,
     };
-    
-    const workers = getCurrentWorkers();
-    workers.push(newWorker);
-    saveWorkers(workers);
-    
-    return newWorker;
+    const docRef = await addDoc(collection(db, 'workers'), newWorker);
+    return { id: docRef.id, ...newWorker };
   } catch (error) {
     console.error('Error creating worker:', error);
     return null;
   }
 }
 
-export function updateWorker(workerId: string, updates: Partial<Omit<Worker, 'id' | 'pinHash'>>): boolean {
+// 🔹 Actualizar trabajador en Firestore
+export async function updateWorker(workerId: string, updates: Partial<Omit<Worker, 'id' | 'pinHash'>>): Promise<boolean> {
   try {
-    const workers = getCurrentWorkers();
-    const workerIndex = workers.findIndex(w => w.id === workerId);
-    
-    if (workerIndex === -1) return false;
-    
-    workers[workerIndex] = { ...workers[workerIndex], ...updates };
-    saveWorkers(workers);
-    
+    const ref = doc(db, 'workers', workerId);
+    await updateDoc(ref, updates);
     return true;
   } catch (error) {
     console.error('Error updating worker:', error);
@@ -217,14 +191,11 @@ export function updateWorker(workerId: string, updates: Partial<Omit<Worker, 'id
   }
 }
 
-export function deleteWorker(workerId: string): boolean {
+// 🔹 Eliminar trabajador en Firestore
+export async function deleteWorker(workerId: string): Promise<boolean> {
   try {
-    const workers = getCurrentWorkers();
-    const filteredWorkers = workers.filter(w => w.id !== workerId);
-    
-    if (filteredWorkers.length === workers.length) return false; // Worker not found
-    
-    saveWorkers(filteredWorkers);
+    const ref = doc(db, 'workers', workerId);
+    await deleteDoc(ref);
     return true;
   } catch (error) {
     console.error('Error deleting worker:', error);

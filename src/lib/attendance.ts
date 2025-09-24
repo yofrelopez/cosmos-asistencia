@@ -23,11 +23,11 @@ export interface User {
   name: string;
 }
 
-export const USERS: User[] = [
+/* export const USERS: User[] = [
   { id: '1', name: 'Juan Pérez' },
   { id: '2', name: 'María García' },
   { id: '3', name: 'Carlos López' }
-];
+]; */
 
 export const EVENT_TYPES = {
   ENTRADA: 'ENTRADA',
@@ -81,11 +81,13 @@ export function calculateWorkedHours(records: AttendanceRecord[]): number {
   return Math.max(0, totalMinutes / 60); // Convertir a horas
 }
 
+
 export function generateDailyReport(records: AttendanceRecord[], date: string): DailyReport[] {
-  const userRecords = USERS.map(user => {
-    const userDayRecords = records.filter(r => 
-      r.userId === user.id && r.date === date
-    );
+  // Obtener los userIds únicos de los registros de ese día
+  const userIds = Array.from(new Set(records.filter(r => r.date === date).map(r => r.userId)));
+
+  const userRecords = userIds.map(userId => {
+    const userDayRecords = records.filter(r => r.userId === userId && r.date === date);
 
     const entrada = userDayRecords.find(r => r.eventType === 'ENTRADA');
     const refrigerio = userDayRecords.find(r => r.eventType === 'REFRIGERIO');
@@ -93,14 +95,14 @@ export function generateDailyReport(records: AttendanceRecord[], date: string): 
     const salida = userDayRecords.find(r => r.eventType === 'SALIDA');
 
     return {
-      userId: user.id,
-      userName: user.name,
+      userId,
+      userName: userDayRecords[0]?.userName || 'Desconocido',
       date,
       entrada: entrada ? formatTime(entrada.timestamp) : undefined,
       refrigerio: refrigerio ? formatTime(refrigerio.timestamp) : undefined,
       terminoRefrigerio: terminoRefrigerio ? formatTime(terminoRefrigerio.timestamp) : undefined,
       salida: salida ? formatTime(salida.timestamp) : undefined,
-      horasTrabajadas: calculateWorkedHours(userDayRecords)
+      horasTrabajadas: calculateWorkedHours(userDayRecords),
     };
   });
 

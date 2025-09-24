@@ -6,10 +6,29 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { UserPlus, Edit, Trash2, Upload, Camera, X } from 'lucide-react';
-import { WORKERS, createWorker, updateWorkerPin, type Worker } from '@/lib/auth';
-import { hashPin } from '@/lib/security';
+import { UserPlus, Edit, Trash2, Camera, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { hashPin } from '@/lib/security';
+
+// Firestore
+import { db } from '@/lib/firebase';
+import {
+  collection,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  onSnapshot,
+} from 'firebase/firestore';
+
+export interface Worker {
+  id: string;
+  name: string;
+  document: string;
+  position: string;
+  photo: string;
+  pinHash: string;
+}
 
 interface WorkerFormData {
   name: string;
@@ -19,13 +38,8 @@ interface WorkerFormData {
   photo?: File | string;
 }
 
-// Dispatch custom event to notify other components of worker updates
-const notifyWorkersUpdated = () => {
-  window.dispatchEvent(new CustomEvent('workersUpdated'));
-};
-
 export default function WorkerManagement() {
-  const [workers, setWorkers] = useState<Worker[]>(WORKERS);
+  const [workers, setWorkers] = useState<Worker[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingWorker, setEditingWorker] = useState<Worker | null>(null);
   const [formData, setFormData] = useState<WorkerFormData>({
@@ -33,69 +47,22 @@ export default function WorkerManagement() {
     pin: '',
     position: '',
     document: '',
-    photo: undefined
+    photo: undefined,
   });
   const [photoPreview, setPhotoPreview] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // 🔄 Escuchar cambios en Firestore
   useEffect(() => {
-    loadWorkers();
+    const unsubscribe = onSnapshot(collection(db, 'workers'), (snapshot) => {
+      const data = snapshot.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<Worker, 'id'>),
+      }));
+      setWorkers(data);
+    });
+    return unsubscribe;
   }, []);
-
-  const loadWorkers = () => {
-    try {
-      const storedWorkers = localStorage.getItem('cosmos_workers');
-      if (storedWorkers) {
-        const parsed = JSON.parse(storedWorkers);
-        setWorkers(parsed);
-      } else {
-        // Initialize with default workers
-        const defaultWorkers = [
-          {
-            id: '1',
-            name: 'Juan Carlos Pérez',
-            pinHash: '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LeVMF98X8.Rb7qvTG',
-            photo: '/assets/workers/worker1.jpg',
-            position: 'Técnico Senior',
-            document: '12345678'
-          },
-          {
-            id: '2',
-            name: 'María Elena García',
-            pinHash: '$2b$12$8k1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LeVMF98X8.Rb7qvTH',
-            photo: '/assets/workers/worker2.jpg',
-            position: 'Especialista en Sistemas',
-            document: '87654321'
-          },
-          {
-            id: '3',
-            name: 'Carlos Antonio López',
-            pinHash: '$2b$12$9m2yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LeVMF98X8.Rb7qvTI',
-            photo: '/assets/workers/worker3.jpg',
-            position: 'Coordinador de Proyectos',
-            document: '11223344'
-          }
-        ];
-        setWorkers(defaultWorkers);
-        localStorage.setItem('cosmos_workers', JSON.stringify(defaultWorkers));
-      }
-    } catch (error) {
-      console.error('Error loading workers:', error);
-      setWorkers([]);
-    }
-  };
-
-  const saveWorkers = (updatedWorkers: Worker[]) => {
-    try {
-      localStorage.setItem('cosmos_workers', JSON.stringify(updatedWorkers));
-      setWorkers(updatedWorkers);
-      // Notify other components that workers have been updated
-      notifyWorkersUpdated();
-    } catch (error) {
-      console.error('Error saving workers:', error);
-      toast.error('Error al guardar los datos');
-    }
-  };
 
   const resetForm = () => {
     setFormData({
@@ -103,7 +70,7 @@ export default function WorkerManagement() {
       pin: '',
       position: '',
       document: '',
-      photo: undefined
+      photo: undefined,
     });
     setPhotoPreview('');
     setEditingWorker(null);
@@ -118,20 +85,19 @@ export default function WorkerManagement() {
     setEditingWorker(worker);
     setFormData({
       name: worker.name,
-      pin: '', // Don't show existing PIN
+      pin: '',
       position: worker.position,
       document: worker.document,
-      photo: worker.photo
+      photo: worker.photo,
     });
     setPhotoPreview(worker.photo);
     setIsDialogOpen(true);
   };
 
-  const handleDeleteWorker = (workerId: string) => {
+  const handleDeleteWorker = async (workerId: string) => {
     if (window.confirm('¿Está seguro de que desea eliminar este trabajador?')) {
       try {
-        const updatedWorkers = workers.filter(w => w.id !== workerId);
-        saveWorkers(updatedWorkers);
+        await deleteDoc(doc(db, 'workers', workerId));
         toast.success('Trabajador eliminado correctamente');
       } catch (error) {
         toast.error('Error al eliminar trabajador');
@@ -143,13 +109,10 @@ export default function WorkerManagement() {
   const handlePhotoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      // Validate file type
       if (!file.type.startsWith('image/')) {
         toast.error('Por favor seleccione un archivo de imagen válido');
         return;
       }
-
-      // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
         toast.error('El archivo es demasiado grande. Máximo 5MB');
         return;
@@ -159,7 +122,7 @@ export default function WorkerManagement() {
       reader.onload = (e) => {
         const result = e.target?.result as string;
         setPhotoPreview(result);
-        setFormData(prev => ({ ...prev, photo: file }));
+        setFormData((prev) => ({ ...prev, photo: result }));
       };
       reader.readAsDataURL(file);
     }
@@ -173,10 +136,10 @@ export default function WorkerManagement() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     const files = Array.from(e.dataTransfer.files);
-    const imageFile = files.find(file => file.type.startsWith('image/'));
-    
+    const imageFile = files.find((file) => file.type.startsWith('image/'));
+
     if (imageFile) {
       if (imageFile.size > 5 * 1024 * 1024) {
         toast.error('El archivo es demasiado grande. Máximo 5MB');
@@ -187,7 +150,7 @@ export default function WorkerManagement() {
       reader.onload = (event) => {
         const result = event.target?.result as string;
         setPhotoPreview(result);
-        setFormData(prev => ({ ...prev, photo: imageFile }));
+        setFormData((prev) => ({ ...prev, photo: result }));
       };
       reader.readAsDataURL(imageFile);
     } else {
@@ -197,7 +160,7 @@ export default function WorkerManagement() {
 
   const removePhoto = () => {
     setPhotoPreview('');
-    setFormData(prev => ({ ...prev, photo: undefined }));
+    setFormData((prev) => ({ ...prev, photo: undefined }));
   };
 
   const validateForm = (): boolean => {
@@ -221,16 +184,6 @@ export default function WorkerManagement() {
       toast.error('El PIN debe tener entre 4 y 6 dígitos');
       return false;
     }
-
-    // Check for duplicate document
-    const existingWorker = workers.find(w => 
-      w.document === formData.document && w.id !== editingWorker?.id
-    );
-    if (existingWorker) {
-      toast.error('Ya existe un trabajador con este documento');
-      return false;
-    }
-
     return true;
   };
 
@@ -238,54 +191,22 @@ export default function WorkerManagement() {
     if (!validateForm()) return;
 
     setIsLoading(true);
-
     try {
-      let photoData = formData.photo;
-      
-      // Convert File to base64 string for storage
-      if (formData.photo instanceof File) {
-        const reader = new FileReader();
-        photoData = await new Promise<string>((resolve) => {
-          reader.onload = (e) => resolve(e.target?.result as string);
-          reader.readAsDataURL(formData.photo as File);
-        });
-      }
+      const workerData: Omit<Worker, 'id'> = {
+        name: formData.name.trim(),
+        document: formData.document.trim(),
+        position: formData.position.trim(),
+        photo: (formData.photo as string) || '/assets/workers/default-avatar.png',
+        pinHash: editingWorker && !formData.pin
+          ? editingWorker.pinHash
+          : await hashPin(formData.pin.trim()),
+      };
 
       if (editingWorker) {
-        // Update existing worker
-        const updatedWorker: Worker = {
-          ...editingWorker,
-          name: formData.name.trim(),
-          position: formData.position.trim(),
-          document: formData.document.trim(),
-          photo: photoData as string || editingWorker.photo
-        };
-
-        // Update PIN if provided
-        if (formData.pin.trim()) {
-          updatedWorker.pinHash = await hashPin(formData.pin.trim());
-        }
-
-        const updatedWorkers = workers.map(w => 
-          w.id === editingWorker.id ? updatedWorker : w
-        );
-        
-        saveWorkers(updatedWorkers);
+        await updateDoc(doc(db, 'workers', editingWorker.id), workerData);
         toast.success('Trabajador actualizado correctamente');
       } else {
-        // Create new worker
-        const hashedPin = await hashPin(formData.pin.trim());
-        const newWorker: Worker = {
-          id: Date.now().toString(),
-          name: formData.name.trim(),
-          pinHash: hashedPin,
-          position: formData.position.trim(),
-          document: formData.document.trim(),
-          photo: photoData as string || '/assets/workers/default-avatar.png'
-        };
-
-        const updatedWorkers = [...workers, newWorker];
-        saveWorkers(updatedWorkers);
+        await addDoc(collection(db, 'workers'), workerData);
         toast.success('Trabajador creado correctamente');
       }
 
@@ -332,8 +253,8 @@ export default function WorkerManagement() {
                   <TableCell>
                     <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-200">
                       {worker.photo ? (
-                        <img 
-                          src={worker.photo} 
+                        <img
+                          src={worker.photo}
                           alt={worker.name}
                           className="w-full h-full object-cover"
                           onError={(e) => {
@@ -342,7 +263,7 @@ export default function WorkerManagement() {
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-gray-500 text-xs">
-                          {worker.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                          {worker.name.split(' ').map((n) => n[0]).join('').slice(0, 2)}
                         </div>
                       )}
                     </div>
@@ -398,7 +319,7 @@ export default function WorkerManagement() {
               {editingWorker ? 'Editar Trabajador' : 'Agregar Nuevo Trabajador'}
             </DialogTitle>
           </DialogHeader>
-          
+
           <div className="space-y-4">
             {/* Photo Upload */}
             <div>
@@ -406,9 +327,9 @@ export default function WorkerManagement() {
               <div className="mt-2">
                 {photoPreview ? (
                   <div className="relative">
-                    <img 
-                      src={photoPreview} 
-                      alt="Preview" 
+                    <img
+                      src={photoPreview}
+                      alt="Preview"
                       className="w-24 h-24 rounded-full object-cover mx-auto"
                     />
                     <Button
@@ -431,9 +352,7 @@ export default function WorkerManagement() {
                     <p className="text-sm text-gray-600">
                       Arrastra una imagen aquí o haz clic para seleccionar
                     </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      PNG, JPG hasta 5MB
-                    </p>
+                    <p className="text-xs text-gray-400 mt-1">PNG, JPG hasta 5MB</p>
                   </div>
                 )}
                 <input
@@ -452,7 +371,9 @@ export default function WorkerManagement() {
               <Input
                 id="name"
                 value={formData.name}
-                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, name: e.target.value }))
+                }
                 placeholder="Ej: Juan Carlos Pérez"
               />
             </div>
@@ -463,7 +384,12 @@ export default function WorkerManagement() {
               <Input
                 id="document"
                 value={formData.document}
-                onChange={(e) => setFormData(prev => ({ ...prev, document: e.target.value.replace(/\D/g, '').slice(0, 8) }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    document: e.target.value.replace(/\D/g, '').slice(0, 8),
+                  }))
+                }
                 placeholder="12345678"
                 maxLength={8}
               />
@@ -475,7 +401,9 @@ export default function WorkerManagement() {
               <Input
                 id="position"
                 value={formData.position}
-                onChange={(e) => setFormData(prev => ({ ...prev, position: e.target.value }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, position: e.target.value }))
+                }
                 placeholder="Ej: Técnico Senior"
               />
             </div>
@@ -489,29 +417,33 @@ export default function WorkerManagement() {
                 id="pin"
                 type="password"
                 value={formData.pin}
-                onChange={(e) => setFormData(prev => ({ ...prev, pin: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    pin: e.target.value.replace(/\D/g, '').slice(0, 6),
+                  }))
+                }
                 placeholder="••••"
                 maxLength={6}
               />
-              <p className="text-xs text-gray-500 mt-1">
-                Entre 4 y 6 dígitos numéricos
-              </p>
+              <p className="text-xs text-gray-500 mt-1">Entre 4 y 6 dígitos numéricos</p>
             </div>
           </div>
 
           <DialogFooter className="gap-2">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => setIsDialogOpen(false)}
               disabled={isLoading}
             >
               Cancelar
             </Button>
-            <Button 
-              onClick={handleSaveWorker}
-              disabled={isLoading}
-            >
-              {isLoading ? 'Guardando...' : (editingWorker ? 'Actualizar' : 'Crear')}
+            <Button onClick={handleSaveWorker} disabled={isLoading}>
+              {isLoading
+                ? 'Guardando...'
+                : editingWorker
+                ? 'Actualizar'
+                : 'Crear'}
             </Button>
           </DialogFooter>
         </DialogContent>

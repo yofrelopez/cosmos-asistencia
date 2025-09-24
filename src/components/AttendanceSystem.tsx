@@ -5,9 +5,12 @@ import { Badge } from '@/components/ui/badge';
 import { Clock, User, CheckCircle, LogOutIcon } from 'lucide-react';
 import { EVENT_TYPES, type AttendanceRecord, generateId, getButtonStates } from '@/lib/attendance-cosmos';
 import { getWorkerById, clearSession, type Worker } from '@/lib/auth';
-import { getAllRecords } from '@/lib/storage';
-import { saveRecord } from '@/lib/storage';
-/* import { retryPendingSync } from '@/lib/storage'; // opcional, si usas el botón de reintento */
+
+// ❌ Eliminamos storage local/sheets
+// import { getAllRecords, saveRecord } from '@/lib/storage';
+
+// ✅ Usamos helpers Firestore (paso 1 ya implementado en attendance-service.ts)
+import { saveAttendanceRecord, listenToUserRecords } from '@/lib/attendance-service';
 
 import { toast } from 'sonner';
 import CompanyHeader from './CompanyHeader';
@@ -17,8 +20,13 @@ import { SessionProps } from '@/lib/types';
 export default function AttendanceSystem({ session, onLogout }: SessionProps) {
   const [worker, setWorker] = useState<Worker | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // 🔹 Registros ahora vienen de Firestore (tiempo real)
   const [recentRecords, setRecentRecords] = useState<AttendanceRecord[]>([]);
+
+  // 🔹 Estados de botones derivados del último registro del día
   const [buttonStates, setButtonStates] = useState<Record<string, boolean>>({});
+
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     eventType: string;
@@ -27,10 +35,17 @@ export default function AttendanceSystem({ session, onLogout }: SessionProps) {
     eventType: ''
   });
 
-  // Load worker data with real-time updates
+  // Utilidad para fecha local YYYY-MM-DD (evita desfases por zona horaria)
+  const getLocalISODate = () => {
+    const d = new Date();
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+    return local.toISOString().split('T')[0];
+  };
+
+  // 1) Cargar/escuchar cambios del trabajador autenticado
   useEffect(() => {
-    const loadWorkerData = () => {
-      const workerData = getWorkerById(session.userId);
+    const loadWorkerData = async () => {
+      const workerData = await getWorkerById(session.userId);
       if (workerData) {
         setWorker(workerData);
       } else {
@@ -41,15 +56,10 @@ export default function AttendanceSystem({ session, onLogout }: SessionProps) {
 
     loadWorkerData();
 
-    // Listen for worker updates
-    const handleWorkersUpdate = () => {
-      loadWorkerData();
-    };
-
+    // Si en tu app hay eventos globales cuando cambian trabajadores, re-sincronizamos
+    const handleWorkersUpdate = () => loadWorkerData();
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'cosmos_workers') {
-        loadWorkerData();
-      }
+      if (e.key === 'cosmos_workers') loadWorkerData();
     };
 
     window.addEventListener('workersUpdated', handleWorkersUpdate);
@@ -61,18 +71,23 @@ export default function AttendanceSystem({ session, onLogout }: SessionProps) {
     };
   }, [session.userId, onLogout]);
 
+  // 2) Suscribirse a Firestore para "Mis últimos registros"
   useEffect(() => {
-    const records = getAllRecords();
-    const userRecords = records.filter(r => r.workerId === session.userId);
-    const recentUserRecords = userRecords.slice(0, 5);
-    setRecentRecords(recentUserRecords);
+    if (!worker?.id) return;
 
-    // Get last record to determine button states
-    const lastRecord = userRecords.length > 0 ? userRecords[0] : null;
-    const states = getButtonStates(lastRecord);
-    setButtonStates(states);
-  }, [session.userId]);
+    // 🔸 Escucha en tiempo real los últimos 5 registros del trabajador
+    const unsubscribe = listenToUserRecords(worker.id, (rows) => {
+      setRecentRecords(rows);
 
+      // Tomamos el último registro (rows[0]) para calcular los botones válidos
+      const lastRecord = rows.length > 0 ? rows[0] : null;
+      setButtonStates(getButtonStates(lastRecord));
+    }, 5);
+
+    return () => unsubscribe();
+  }, [worker?.id]);
+
+  // 3) Abrir modal de confirmación (mantenemos el patrón actual)
   const handleEventClick = (eventType: keyof typeof EVENT_TYPES) => {
     setConfirmDialog({
       isOpen: true,
@@ -80,11 +95,12 @@ export default function AttendanceSystem({ session, onLogout }: SessionProps) {
     });
   };
 
+  // 4) Confirmar y guardar evento en Firestore
   const handleConfirmEvent = async () => {
     if (!worker) return;
 
     setIsLoading(true);
-    
+
     const now = new Date();
     const record: AttendanceRecord = {
       id: generateId(),
@@ -92,36 +108,25 @@ export default function AttendanceSystem({ session, onLogout }: SessionProps) {
       workerName: worker.name,
       workerDocument: worker.document,
       eventType: confirmDialog.eventType as AttendanceRecord['eventType'],
-      timestamp: now.toISOString(),
-      date: now.toISOString().split('T')[0],
-      location: 'Oficina Principal'
+      timestamp: now.toISOString(),           // seguimos usando ISO string para compatibilidad
+      date: getLocalISODate(),                // YYYY-MM-DD en local
+      location: 'Oficina Principal'           // puedes reemplazar por tu getCurrentLocation()
     };
 
     try {
-      // Save with automatic Google Sheets sync
-      await saveRecord(record);
-      
-      setRecentRecords(prev => [record, ...prev.slice(0, 4)]);
-      
-      // Update button states based on new record
-      const newStates = getButtonStates(record);
-      setButtonStates(newStates);
-      
+      // ✅ Guardar en Firestore (fuente principal)
+      await saveAttendanceRecord(record);
+
+      // ❗ No actualizamos manualmente recentRecords ni buttonStates:
+      // el onSnapshot de Firestore ya lo hará en cuanto se confirme la escritura.
+
       toast.success(`${confirmDialog.eventType} registrada correctamente`, {
-        description: `${worker.name} - ${now.toLocaleTimeString('es-PE')} - Sincronizado con Google Sheets`,
+        description: `${worker.name} - ${now.toLocaleTimeString('es-PE')}`,
         icon: <CheckCircle className="h-4 w-4" />
       });
     } catch (error) {
       console.error('Error:', error);
-      
-      // Show different messages based on error type
-      if (error instanceof Error && error.message.includes('failed to sync')) {
-        toast.warning('Registro guardado localmente', {
-          description: 'Se sincronizará con Google Sheets cuando haya conexión'
-        });
-      } else {
-        toast.error('Error al registrar el evento');
-      }
+      toast.error('Error al registrar el evento');
     } finally {
       setIsLoading(false);
       setConfirmDialog({ isOpen: false, eventType: '' });
@@ -132,12 +137,14 @@ export default function AttendanceSystem({ session, onLogout }: SessionProps) {
     setConfirmDialog({ isOpen: false, eventType: '' });
   };
 
+  // 5) Logout sin cambios
   const handleLogout = () => {
     clearSession();
     onLogout();
     toast.info('Sesión cerrada correctamente');
   };
 
+  // 6) Colores de botones (sin cambios)
   const getButtonColor = (eventType: string, isEnabled: boolean) => {
     const baseColor = (() => {
       switch (eventType) {
@@ -149,8 +156,8 @@ export default function AttendanceSystem({ session, onLogout }: SessionProps) {
       }
     })();
 
-    return isEnabled 
-      ? `${baseColor} text-white` 
+    return isEnabled
+      ? `${baseColor} text-white`
       : 'bg-gray-300 text-gray-500 cursor-not-allowed';
   };
 
@@ -161,25 +168,26 @@ export default function AttendanceSystem({ session, onLogout }: SessionProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-red-50">
       <CompanyHeader />
-      
+
       <div className="container mx-auto p-6">
         <div className="max-w-4xl mx-auto space-y-6">
+
           {/* Usuario actual */}
           <Card className="shadow-lg">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-200">
-                    {worker.photo ? (
+                    {worker?.photo ? (
                       <img
                         src={worker.photo}
-                        alt={worker.name}
+                        alt={worker?.name || 'Trabajador'}
                         className="w-full h-full object-cover"
                         onError={(e) => {
                           const target = e.target as HTMLImageElement;
                           target.style.display = 'none';
                           const parent = target.parentElement;
-                          if (parent) {
+                          if (parent && worker?.name) {
                             parent.innerHTML = `
                               <div class="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700 text-white text-xl font-bold">
                                 ${worker.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
@@ -190,14 +198,22 @@ export default function AttendanceSystem({ session, onLogout }: SessionProps) {
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700 text-white text-xl font-bold">
-                        {worker.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                        {worker?.name
+                          ? worker.name.split(' ').map(n => n[0]).join('').slice(0, 2)
+                          : '??'}
                       </div>
                     )}
                   </div>
                   <div>
-                    <h2 className="text-xl font-semibold text-gray-900">{worker.name}</h2>
-                    <Badge variant="secondary" className="mb-1">{worker.position}</Badge>
-                    <p className="text-sm text-gray-500">DNI: {worker.document}</p>
+                    <h2 className="text-xl font-semibold text-gray-900">
+                      {worker?.name || 'Sin nombre'}
+                    </h2>
+                    <Badge variant="secondary" className="mb-1">
+                      {worker?.position || 'Sin posición'}
+                    </Badge>
+                    <p className="text-sm text-gray-500">
+                      DNI: {worker?.document || '---'}
+                    </p>
                   </div>
                 </div>
                 <Button onClick={handleLogout} variant="outline" className="gap-2">
@@ -228,7 +244,7 @@ export default function AttendanceSystem({ session, onLogout }: SessionProps) {
                 >
                   ENTRADA
                 </Button>
-                
+
                 <Button
                   onClick={() => handleEventClick('REFRIGERIO')}
                   disabled={isLoading || !buttonStates.REFRIGERIO}
@@ -236,7 +252,7 @@ export default function AttendanceSystem({ session, onLogout }: SessionProps) {
                 >
                   REFRIGERIO
                 </Button>
-                
+
                 <Button
                   onClick={() => handleEventClick('TERMINO_REFRIGERIO')}
                   disabled={isLoading || !buttonStates.TERMINO_REFRIGERIO}
@@ -244,7 +260,7 @@ export default function AttendanceSystem({ session, onLogout }: SessionProps) {
                 >
                   TÉRMINO REFRIGERIO
                 </Button>
-                
+
                 <Button
                   onClick={() => handleEventClick('SALIDA')}
                   disabled={isLoading || !buttonStates.SALIDA}

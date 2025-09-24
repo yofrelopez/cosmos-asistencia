@@ -12,30 +12,30 @@ export default function AdminLogin({ onLogin, onBack }: AdminLoginProps) {
   const [pin, setPin] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handlePinSubmit = async () => {
-    if (pin.length < 4) {
-      toast.error('Ingrese un PIN válido');
-      return;
-    }
+const handlePinSubmit = async () => {
+  if (pin.length < 4) {
+    toast.error("Ingrese un PIN válido");
+    return;
+  }
 
-    setIsLoading(true);
+  setIsLoading(true);
 
-    try {
-      const admin = validateAdminPin(pin);
-      if (admin) {
-        const session = createSession(admin.id, 'admin', admin.name);
-        toast.success(`Bienvenido/a, ${admin.name}`);
-        onLogin(session);
-      } else {
-        toast.error('PIN de administrador incorrecto');
-        setPin('');
-      }
-    } catch (error) {
-      toast.error('Error al iniciar sesión');
-    } finally {
-      setIsLoading(false);
+  try {
+    const admin = await validateAdminPin(pin); // 🔹 ahora sí lleva await
+    if (admin) {
+      const session = createSession(admin.id, "admin", admin.name);
+      toast.success(`Bienvenido/a, ${admin.name}`);
+      onLogin(session);
+    } else {
+      toast.error("PIN de administrador incorrecto");
+      setPin("");
     }
-  };
+  } catch (error) {
+    toast.error("Error al iniciar sesión");
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const handlePinKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -63,7 +63,7 @@ export default function AdminLogin({ onLogin, onBack }: AdminLoginProps) {
             </CardHeader>
             <CardContent className="p-6 space-y-6">
               <div>
-                <label className="text-sm font-medium mb-2 block flex items-center gap-2">
+                <label className="text-sm font-medium mb-2 block items-center gap-2">
                   <KeyIcon className="h-4 w-4" />
                   PIN de Administrador
                 </label>

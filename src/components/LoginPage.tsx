@@ -9,78 +9,52 @@ import { toast } from 'sonner';
 import CompanyHeader from './CompanyHeader';
 import { LoginProps } from '@/lib/types';
 
+// Firestore
+import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+
 export default function LoginPage({ onLogin, onAdminAccess }: LoginProps) {
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null);
   const [pin, setPin] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Load workers with real-time updates
-  useEffect(() => {
-    const loadWorkers = () => {
-      try {
-        const stored = localStorage.getItem('cosmos_workers');
-        if (stored) {
-          const parsedWorkers = JSON.parse(stored);
-          setWorkers(parsedWorkers);
-        } else {
-          // Load default workers if none exist
-          const defaultWorkers = [
-            {
-              id: '1',
-              name: 'Juan Carlos Pérez',
-              pinHash: '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LeVMF98X8.Rb7qvTG',
-              photo: '/assets/workers/worker1.jpg',
-              position: 'Técnico Senior',
-              document: '12345678'
-            },
-            {
-              id: '2',
-              name: 'María Elena García',
-              pinHash: '$2b$12$8k1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LeVMF98X8.Rb7qvTH',
-              photo: '/assets/workers/worker2.jpg',
-              position: 'Especialista en Sistemas',
-              document: '87654321'
-            },
-            {
-              id: '3',
-              name: 'Carlos Antonio López',
-              pinHash: '$2b$12$9m2yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LeVMF98X8.Rb7qvTI',
-              photo: '/assets/workers/worker3.jpg',
-              position: 'Coordinador de Proyectos',
-              document: '11223344'
-            }
-          ];
-          setWorkers(defaultWorkers);
-          localStorage.setItem('cosmos_workers', JSON.stringify(defaultWorkers));
-        }
-      } catch (error) {
-        console.error('Error loading workers:', error);
-        setWorkers([]);
-      }
-    };
 
-    loadWorkers();
 
-    // Listen for worker updates
-    const handleWorkersUpdate = () => {
-      loadWorkers();
-    };
 
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'cosmos_workers') {
-        loadWorkers();
-      }
-    };
 
-    window.addEventListener('workersUpdated', handleWorkersUpdate);
-    window.addEventListener('storage', handleStorageChange);
 
-    return () => {
-      window.removeEventListener('workersUpdated', handleWorkersUpdate);
-      window.removeEventListener('storage', handleStorageChange);
-    };
-  }, []);
+
+
+// Cargar trabajadores en tiempo real desde Firestore
+useEffect(() => {
+  const unsubscribe = onSnapshot(
+    collection(db, 'workers'),
+    (snapshot) => {
+      const workersData = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Worker[];
+      setWorkers(workersData);
+    },
+    (error) => {
+      console.error('Error cargando trabajadores:', error);
+      setWorkers([]);
+      toast.error('Error al cargar trabajadores');
+    }
+  );
+
+  return () => unsubscribe();
+}, []);
+
+
+
+
+
+
+
+
+
 
   const handleWorkerSelect = (worker: Worker) => {
     setSelectedWorker(worker);
@@ -98,7 +72,11 @@ export default function LoginPage({ onLogin, onAdminAccess }: LoginProps) {
     try {
       const isValid = await validateWorkerPin(selectedWorker.id, pin);
       if (isValid) {
-        const session = createSession(selectedWorker.id, 'worker', selectedWorker.name);
+        const session = createSession(
+          selectedWorker.id,
+          'worker',
+          selectedWorker.name
+        );
         toast.success(`Bienvenido/a, ${selectedWorker.name}`);
         onLogin(session);
       } else {
@@ -121,7 +99,7 @@ export default function LoginPage({ onLogin, onAdminAccess }: LoginProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-red-50">
       <CompanyHeader />
-      
+
       <div className="container mx-auto p-6">
         <div className="max-w-4xl mx-auto space-y-8">
           <div className="text-center">
@@ -144,7 +122,7 @@ export default function LoginPage({ onLogin, onAdminAccess }: LoginProps) {
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {workers.map((worker) => (
-                    <Card 
+                    <Card
                       key={worker.id}
                       className="cursor-pointer hover:shadow-lg transition-all duration-200 hover:scale-105 border-2 hover:border-blue-500"
                       onClick={() => handleWorkerSelect(worker)}
@@ -164,7 +142,11 @@ export default function LoginPage({ onLogin, onAdminAccess }: LoginProps) {
                                   if (parent) {
                                     parent.innerHTML = `
                                       <div class="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700 text-white text-2xl font-bold">
-                                        ${worker.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                                        ${worker.name
+                                          .split(' ')
+                                          .map((n) => n[0])
+                                          .join('')
+                                          .slice(0, 2)}
                                       </div>
                                     `;
                                   }
@@ -172,7 +154,11 @@ export default function LoginPage({ onLogin, onAdminAccess }: LoginProps) {
                               />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700 text-white text-2xl font-bold">
-                                {worker.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                                {worker.name
+                                  .split(' ')
+                                  .map((n) => n[0])
+                                  .join('')
+                                  .slice(0, 2)}
                               </div>
                             )}
                           </div>
@@ -219,7 +205,11 @@ export default function LoginPage({ onLogin, onAdminAccess }: LoginProps) {
                         if (parent) {
                           parent.innerHTML = `
                             <div class="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700 text-white text-xl font-bold">
-                              ${selectedWorker.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                              ${selectedWorker.name
+                                .split(' ')
+                                .map((n) => n[0])
+                                .join('')
+                                .slice(0, 2)}
                             </div>
                           `;
                         }
@@ -227,16 +217,16 @@ export default function LoginPage({ onLogin, onAdminAccess }: LoginProps) {
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700 text-white text-xl font-bold">
-                      {selectedWorker.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                      {selectedWorker.name
+                        .split(' ')
+                        .map((n) => n[0])
+                        .join('')
+                        .slice(0, 2)}
                     </div>
                   )}
                 </div>
-                <CardTitle className="text-xl">
-                  {selectedWorker.name}
-                </CardTitle>
-                <Badge variant="secondary">
-                  {selectedWorker.position}
-                </Badge>
+                <CardTitle className="text-xl">{selectedWorker.name}</CardTitle>
+                <Badge variant="secondary">{selectedWorker.position}</Badge>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div>
@@ -247,7 +237,9 @@ export default function LoginPage({ onLogin, onAdminAccess }: LoginProps) {
                   <Input
                     type="password"
                     value={pin}
-                    onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    onChange={(e) =>
+                      setPin(e.target.value.replace(/\D/g, '').slice(0, 6))
+                    }
                     onKeyPress={handlePinKeyPress}
                     placeholder="••••"
                     className="text-center text-2xl tracking-widest h-14"
