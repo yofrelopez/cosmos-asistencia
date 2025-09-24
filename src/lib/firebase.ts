@@ -12,7 +12,7 @@ const firebaseConfig = {
 };
 
 // 👇 ponlo aquí después de definir firebaseConfig
-console.log("🔥 Config:", firebaseConfig);
+
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
