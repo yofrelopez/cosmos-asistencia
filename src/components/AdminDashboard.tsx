@@ -31,6 +31,8 @@ import { SessionProps } from "@/lib/types";
 // 🔹 Modelo unificado de asistencia
 import type { AttendanceRecord } from "@/lib/attendance-cosmos";
 import { EVENT_TYPES } from "@/lib/attendance-cosmos";
+import { getTodayStats, getMonthlyStats } from "@/lib/attendance-cosmos";
+
 
 // 🔹 Firestore en tiempo real
 import { db } from "@/lib/firebase";
@@ -61,6 +63,11 @@ export default function AdminDashboard({ session, onLogout }: SessionProps) {
     );
     return () => unsub();
   }, []);
+
+
+  const todayStats = useMemo(() => getTodayStats(records), [records]);
+const monthlyStats = useMemo(() => getMonthlyStats(records), [records]);
+
 
   // 🔸 Stats calculadas desde records
   const stats = useMemo(() => {
@@ -138,177 +145,141 @@ export default function AdminDashboard({ session, onLogout }: SessionProps) {
     toast.success("Datos actualizados (tiempo real)");
   };
 
+
+
+
+
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-red-50">
-      <CompanyHeader />
+  <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-red-50">
+    <CompanyHeader />
 
-      <div className="container mx-auto p-6">
-        <div className="max-w-7xl mx-auto space-y-6">
-          {/* Header */}
-          <Card className="shadow-lg">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h1 className="text-2xl font-bold text-gray-900">Panel de Administración</h1>
-                  <p className="text-gray-600">Bienvenido, {session.userName}</p>
-                </div>
-                <div className="flex gap-3">
-                  <Button onClick={refreshData} variant="outline" className="gap-2">
-                    <RefreshCw className="h-4 w-4" />
-                    Actualizar
-                  </Button>
-                  <Button onClick={handleLogout} variant="outline" className="gap-2">
-                    <LogOutIcon className="h-4 w-4" />
-                    Cerrar Sesión
-                  </Button>
-                </div>
+    <div className="container mx-auto p-4 sm:p-6">
+      <div className="max-w-7xl mx-auto space-y-6 pb-12">
+        {/* Header */}
+        <Card className="shadow-md">
+          <CardContent className="p-4 sm:p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="text-center sm:text-left">
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+                Panel de Administración
+              </h1>
+              <p className="text-gray-600 text-sm">Bienvenido, {session.userName}</p>
+            </div>
+            <Button onClick={handleLogout} variant="outline" className="gap-2 w-full sm:w-auto">
+              <LogOutIcon className="h-4 w-4" />
+              Cerrar Sesión
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Stats Hoy */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Card className="shadow-sm">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-500">Presentes Hoy</p>
+                <p className="text-xl font-bold text-green-600">{todayStats.presentes}</p>
               </div>
+              <CheckCircle className="h-6 w-6 text-green-500" />
             </CardContent>
           </Card>
 
-          {/* Statistics Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <Card className="shadow-lg">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Total Registros</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-                  </div>
-                  <FileText className="h-8 w-8 text-blue-600" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-lg">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Registros Hoy</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.today}</p>
-                  </div>
-                  <Calendar className="h-8 w-8 text-green-600" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-lg">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Este Mes</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.thisMonth}</p>
-                  </div>
-                  <TrendingUp className="h-8 w-8 text-purple-600" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-lg">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Sincronización</p>
-                    <div className="flex items-center gap-2">
-                      {syncStatus.failedSyncs === 0 ? (
-                        <CheckCircle className="h-4 w-4 text-green-600" />
-                      ) : (
-                        <AlertCircle className="h-4 w-4 text-yellow-600" />
-                      )}
-                      <span className="text-sm">
-                        {syncStatus.failedSyncs === 0 ? "Tiempo real" : `${syncStatus.failedSyncs} pendientes`}
-                      </span>
-                    </div>
-                  </div>
-                  <Settings className="h-8 w-8 text-indigo-600" />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Firestore Sync Section */}
-          <Card className="shadow-lg">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Settings className="h-5 w-5" />
-                Sincronización (Firestore en tiempo real)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="text-center p-4 bg-blue-50 rounded-lg">
-                  <p className="text-sm text-gray-600">Total de Registros</p>
-                  <p className="text-xl font-bold text-blue-600">{syncStatus.totalRecords}</p>
-                </div>
-                <div className="text-center p-4 bg-yellow-50 rounded-lg">
-                  <p className="text-sm text-gray-600">Pendientes de Sincronizar</p>
-                  <p className="text-xl font-bold text-yellow-600">{syncStatus.failedSyncs}</p>
-                </div>
-                <div className="text-center p-4 bg-green-50 rounded-lg">
-                  <p className="text-sm text-gray-600">Última Actualización</p>
-                  <p className="text-sm text-green-600">
-                    {lastSyncTime ? lastSyncTime.toLocaleString("es-PE") : "Automática"}
-                  </p>
-                </div>
+          <Card className="shadow-sm">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-500">Ausentes Hoy</p>
+                <p className="text-xl font-bold text-red-600">{todayStats.ausentes}</p>
               </div>
-
-              <div className="flex gap-3 justify-center">
-                <Button onClick={handleManualSync} disabled={isManualSyncing} className="gap-2">
-                  {isManualSyncing ? (
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Upload className="h-4 w-4" />
-                  )}
-                  {isManualSyncing ? "Sincronizando..." : "Sincronizar Todo"}
-                </Button>
-
-                <Button onClick={handleRetryFailedSyncs} variant="outline" className="gap-2">
-                  <RefreshCw className="h-4 w-4" />
-                  Reintentar Fallidos
-                </Button>
-
-                <Button onClick={handleExportData} variant="outline" className="gap-2">
-                  <Download className="h-4 w-4" />
-                  Exportar Datos
-                </Button>
-              </div>
+              <AlertCircle className="h-6 w-6 text-red-500" />
             </CardContent>
           </Card>
 
-          {/* Main Content Tabs */}
-          <Tabs defaultValue="workers" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="history" className="gap-2">
-                <Clock className="h-4 w-4" />
-                Registros de Asistencia
-              </TabsTrigger>
-              <TabsTrigger value="workers" className="gap-2">
-                <Users className="h-4 w-4" />
-                Gestión de Trabajadores
-              </TabsTrigger>
-            </TabsList>
+          <Card className="shadow-sm">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-500">Tardanzas</p>
+                <p className="text-xl font-bold text-yellow-600">{todayStats.tardanzas}</p>
+              </div>
+              <Clock className="h-6 w-6 text-yellow-500" />
+            </CardContent>
+          </Card>
+        </div>
 
-            {/* 🔹 Botón para ir al historial completo */}
-            <TabsContent value="history">
-              <Card className="shadow-lg">
-                <CardContent className="p-6 text-center">
-                  <p className="mb-4 text-gray-700">
-                    Ahora puedes consultar y gestionar los registros en una pantalla exclusiva.
-                  </p>
+        {/* Stats Mensuales */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Card className="shadow-sm">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-500">Total Asistencias (Mes)</p>
+                <p className="text-xl font-bold text-blue-600">{monthlyStats.total}</p>
+              </div>
+              <Calendar className="h-6 w-6 text-blue-500" />
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-500">Promedio Horas Trabajadas</p>
+                <p className="text-xl font-bold text-purple-600">
+                  {monthlyStats.promedioHoras.toFixed(1)}h
+                </p>
+              </div>
+              <TrendingUp className="h-6 w-6 text-purple-500" />
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Tabs principales */}
+        <Tabs defaultValue="history" className="space-y-4">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="history" className="gap-2">
+              <Clock className="h-4 w-4" />
+              Registros de Asistencia
+            </TabsTrigger>
+            <TabsTrigger value="workers" className="gap-2">
+              <Users className="h-4 w-4" />
+              Gestión de Trabajadores
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="history">
+            <Card className="shadow-md">
+              <CardContent className="p-6 text-center">
+                <p className="mb-4 text-gray-700">
+                  Consulta y gestiona los registros en la pantalla de historial completo.
+                </p>
                 <Button onClick={() => navigate("/history")} className="gap-2">
                   <FileText className="h-4 w-4" />
                   Ver Historial Completo
                 </Button>
-                </CardContent>
-              </Card>
-            </TabsContent>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-            <TabsContent value="workers">
-              <WorkerManagement />
-            </TabsContent>
-          </Tabs>
-        </div>
+          <TabsContent value="workers">
+            <WorkerManagement />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
-  );
+  </div>
+);
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+  
+  
+
 }

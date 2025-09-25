@@ -165,179 +165,188 @@ export default function AttendanceSystem({ session, onLogout }: SessionProps) {
     return <div>Error: Usuario no encontrado</div>;
   }
 
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-red-50">
-      <CompanyHeader />
+  <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-red-50">
+    <CompanyHeader />
 
-      <div className="container mx-auto p-6">
-        <div className="max-w-4xl mx-auto space-y-6">
+    <div className="container mx-auto p-4 md:p-6">
+      <div className="max-w-4xl mx-auto space-y-6">
 
-          {/* Usuario actual */}
-          <Card className="shadow-lg">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-200">
-                    {worker?.photo ? (
-                      <img
-                        src={worker.photo}
-                        alt={worker?.name || 'Trabajador'}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          target.style.display = 'none';
-                          const parent = target.parentElement;
-                          if (parent && worker?.name) {
-                            parent.innerHTML = `
-                              <div class="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700 text-white text-xl font-bold">
-                                ${worker.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                              </div>
-                            `;
-                          }
-                        }}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700 text-white text-xl font-bold">
-                        {worker?.name
-                          ? worker.name.split(' ').map(n => n[0]).join('').slice(0, 2)
-                          : '??'}
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-semibold text-gray-900">
-                      {worker?.name || 'Sin nombre'}
-                    </h2>
-                    <Badge variant="secondary" className="mb-1">
-                      {worker?.position || 'Sin posición'}
-                    </Badge>
-                    <p className="text-sm text-gray-500">
-                      DNI: {worker?.document || '---'}
-                    </p>
-                  </div>
+        {/* Usuario actual */}
+        <Card className="shadow-lg">
+          <CardContent className="p-4 md:p-6">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              {/* Avatar + info */}
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full overflow-hidden bg-gray-200">
+                  {worker?.photo ? (
+                    <img
+                      src={worker.photo}
+                      alt={worker?.name || "Trabajador"}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = "none";
+                        const parent = target.parentElement;
+                        if (parent && worker?.name) {
+                          parent.innerHTML = `
+                            <div class="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700 text-white text-lg sm:text-xl font-bold">
+                              ${worker.name.split(" ").slice(0, 2).map((n) => n[0]).join("")}
+                              
+                            </div>
+                          `;
+                        }
+                      }}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700 text-white text-lg sm:text-xl font-bold">
+                      {worker?.name
+                        ? worker.name.split(" ").slice(0, 2).map((n) => n[0]).join("")
+                        : "??"}
+                    </div>
+                  )}
                 </div>
-                <Button onClick={handleLogout} variant="outline" className="gap-2">
-                  <LogOutIcon className="h-4 w-4" />
-                  Cerrar Sesión
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                <div className="text-center sm:text-left">
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
+                    {/* Solo primer nombre + primer apellido */}
+                    {worker?.name
+  ? `${worker.name.split(" ")[0]} ${worker.name.split(" ").slice(-2, -1)[0]}`
+  : "Sin nombre"}
 
-          {/* Botones de registro */}
-          <Card className="shadow-lg">
-            <CardHeader className="text-center bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-t-lg">
-              <CardTitle className="flex items-center justify-center gap-2 text-2xl">
-                <Clock className="h-6 w-6" />
-                Registro de Asistencia
-              </CardTitle>
-              <p className="text-blue-100">
-                Seleccione el evento a registrar
-              </p>
-            </CardHeader>
-            <CardContent className="p-8">
-              <div className="grid grid-cols-2 gap-6">
-                <Button
-                  onClick={() => handleEventClick('ENTRADA')}
-                  disabled={isLoading || !buttonStates.ENTRADA}
-                  className={`h-24 text-xl font-semibold transition-all duration-200 ${getButtonColor('ENTRADA', buttonStates.ENTRADA)}`}
-                >
-                  ENTRADA
-                </Button>
-
-                <Button
-                  onClick={() => handleEventClick('REFRIGERIO')}
-                  disabled={isLoading || !buttonStates.REFRIGERIO}
-                  className={`h-24 text-xl font-semibold transition-all duration-200 ${getButtonColor('REFRIGERIO', buttonStates.REFRIGERIO)}`}
-                >
-                  REFRIGERIO
-                </Button>
-
-                <Button
-                  onClick={() => handleEventClick('TERMINO_REFRIGERIO')}
-                  disabled={isLoading || !buttonStates.TERMINO_REFRIGERIO}
-                  className={`h-24 text-xl font-semibold transition-all duration-200 ${getButtonColor('TERMINO_REFRIGERIO', buttonStates.TERMINO_REFRIGERIO)}`}
-                >
-                  TÉRMINO REFRIGERIO
-                </Button>
-
-                <Button
-                  onClick={() => handleEventClick('SALIDA')}
-                  disabled={isLoading || !buttonStates.SALIDA}
-                  className={`h-24 text-xl font-semibold transition-all duration-200 ${getButtonColor('SALIDA', buttonStates.SALIDA)}`}
-                >
-                  SALIDA
-                </Button>
-              </div>
-
-              <div className="text-center text-sm text-muted-foreground bg-gray-50 p-4 rounded-lg mt-6">
-                <Clock className="h-4 w-4 inline mr-1" />
-                Hora actual: {new Date().toLocaleTimeString('es-PE')}
-              </div>
-
-              {/* Estado actual */}
-              {recentRecords.length > 0 && (
-                <div className="mt-4 p-3 bg-blue-50 rounded-lg text-center">
-                  <p className="text-sm text-blue-700">
-                    Último registro: <span className="font-semibold">{recentRecords[0].eventType}</span>
-                    {' '}a las {new Date(recentRecords[0].timestamp).toLocaleTimeString('es-PE')}
+                  </h2>
+                  <Badge variant="secondary" className="hidden sm:inline">
+                    {worker?.position || "Sin posición"}
+                  </Badge>
+                  <p className="hidden sm:block text-sm text-gray-500">
+                    DNI: {worker?.document || "---"}
                   </p>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </div>
 
-          {/* Registros recientes */}
-          {recentRecords.length > 0 && (
-            <Card className="shadow-lg">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <User className="h-5 w-5" />
-                  Mis Últimos Registros
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="divide-y divide-gray-200">
-                  {recentRecords.map((record, index) => (
-                    <div
-                      key={record.id}
-                      className={`flex justify-between items-center p-4 hover:bg-gray-50 transition-colors ${
-                        index === 0 ? 'bg-blue-50' : ''
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-3 h-3 rounded-full ${
-                          record.eventType === 'ENTRADA' ? 'bg-green-500' :
-                          record.eventType === 'REFRIGERIO' ? 'bg-orange-500' :
-                          record.eventType === 'TERMINO_REFRIGERIO' ? 'bg-blue-500' :
-                          'bg-red-500'
-                        }`}></div>
-                        <div>
-                          <span className="font-medium text-gray-900">{record.eventType}</span>
-                          <span className="text-sm text-gray-500 ml-2">
-                            {record.location}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="text-sm text-gray-600 font-mono">
-                        {new Date(record.timestamp).toLocaleString('es-PE')}
+              {/* Botón cerrar sesión */}
+              <Button
+                onClick={handleLogout}
+                variant="outline"
+                className="gap-2 w-full sm:w-auto"
+              >
+                <LogOutIcon className="h-4 w-4" />
+                Cerrar Sesión
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Botones de registro */}
+        <Card className="shadow-lg">
+          <CardHeader className="text-center bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-t-lg">
+            <CardTitle className="flex items-center justify-center gap-2 text-xl sm:text-2xl">
+              <Clock className="h-5 w-5 sm:h-6 sm:w-6" />
+              Registro de Asistencia
+            </CardTitle>
+            <p className="text-blue-100 text-sm sm:text-base">
+              Seleccione el evento a registrar
+            </p>
+          </CardHeader>
+          <CardContent className="p-6 sm:p-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+              {["ENTRADA", "REFRIGERIO", "TERMINO_REFRIGERIO", "SALIDA"].map((type) => (
+                <Button
+                  key={type}
+                  onClick={() => handleEventClick(type as any)}
+                  disabled={isLoading || !buttonStates[type as keyof typeof buttonStates]}
+                  className={`h-20 sm:h-24 w-full text-lg sm:text-xl font-semibold transition-all duration-200 ${getButtonColor(
+                    type,
+                    buttonStates[type as keyof typeof buttonStates]
+                  )}`}
+                >
+                  {type === "TERMINO_REFRIGERIO" ? "TÉRMINO REFRIGERIO" : type}
+                </Button>
+              ))}
+            </div>
+
+            {/* Hora actual */}
+            <div className="mt-6 text-center text-gray-600 text-sm sm:text-base">
+              <Clock className="inline h-4 w-4 mr-1 text-blue-500" />
+              Hora actual: {new Date().toLocaleTimeString("es-PE")}
+            </div>
+
+            {/* Último registro */}
+            {recentRecords.length > 0 && (
+              <div className="mt-4 p-3 bg-blue-50 rounded-lg text-center text-sm sm:text-base">
+                <p className="text-blue-700">
+                  Último registro:{" "}
+                  <span className="font-semibold">
+                    {recentRecords[0].eventType}
+                  </span>{" "}
+                  a las{" "}
+                  {new Date(recentRecords[0].timestamp).toLocaleTimeString("es-PE")}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Registros recientes */}
+        {recentRecords.length > 0 && (
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+                <User className="h-4 w-4 sm:h-5 sm:w-5" />
+                Mis Últimos Registros
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="divide-y divide-gray-200">
+                {recentRecords.map((record, index) => (
+                  <div
+                    key={record.id}
+                    className={`flex flex-col sm:flex-row sm:justify-between items-start sm:items-center p-3 sm:p-4 ${
+                      index === 0 ? "bg-blue-50 border-l-4 border-blue-500" : ""
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-3 h-3 rounded-full ${
+                          record.eventType === "ENTRADA"
+                            ? "bg-green-500"
+                            : record.eventType === "REFRIGERIO"
+                            ? "bg-orange-500"
+                            : record.eventType === "TERMINO_REFRIGERIO"
+                            ? "bg-blue-500"
+                            : "bg-red-500"
+                        }`}
+                      ></div>
+                      <div>
+                        <span className="font-medium text-gray-900">
+                          {record.eventType}
+                        </span>
+                        <span className="text-sm text-gray-500 ml-2">
+                          {record.location}
+                        </span>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+                    <div className="text-xs sm:text-sm text-gray-600 font-mono">
+                      {new Date(record.timestamp).toLocaleString("es-PE")}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
-
-      <ConfirmationDialog
-        isOpen={confirmDialog.isOpen}
-        eventType={confirmDialog.eventType}
-        workerName={worker.name}
-        onConfirm={handleConfirmEvent}
-        onCancel={handleCancelEvent}
-      />
     </div>
-  );
+
+    <ConfirmationDialog
+      isOpen={confirmDialog.isOpen}
+      eventType={confirmDialog.eventType}
+      workerName={worker.name}
+      onConfirm={handleConfirmEvent}
+      onCancel={handleCancelEvent}
+    />
+  </div>
+);
+
+
 }

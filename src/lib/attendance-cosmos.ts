@@ -371,3 +371,70 @@ export function getButtonStates(lastRecord: AttendanceRecord | null): Record<str
       };
   }
 }
+
+
+
+
+// 📌 Estadísticas rápidas para el Dashboard
+
+
+export function getTodayStats(records: AttendanceRecord[]) {
+  const today = new Date().toISOString().split("T")[0];
+  const todayRecords = records.filter(r => r.date === today);
+
+  // IDs únicos de trabajadores que tienen ENTRADA hoy
+  const presentes = new Set(todayRecords.filter(r => r.eventType === "ENTRADA").map(r => r.workerId)).size;
+
+  // IDs únicos de todos los trabajadores que deberían tener registro (simplificación)
+  // 🔹 si quieres ausentes reales, necesitas el total de trabajadores de Firestore
+  const totalWorkers = new Set(records.map(r => r.workerId)).size;
+
+  const ausentes = Math.max(totalWorkers - presentes, 0);
+
+  // 🔹 simplificación: Tardanzas = entradas después de las 9am
+  const tardanzas = todayRecords.filter(r => {
+    if (r.eventType !== "ENTRADA") return false;
+    const hour = new Date(r.timestamp).getHours();
+    return hour >= 9;
+  }).length;
+
+  return { presentes, ausentes, tardanzas };
+}
+
+export function getMonthlyStats(records: AttendanceRecord[]) {
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  const monthRecords = records.filter(r => {
+    const d = new Date(r.date);
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+  });
+
+  const total = monthRecords.length;
+
+  // 🔹 calcular horas trabajadas reales por trabajador/día
+  let totalHoras = 0;
+  let totalDias = 0;
+
+  const groupedByWorkerDate = new Map<string, AttendanceRecord[]>();
+  monthRecords.forEach(r => {
+    const key = `${r.workerId}-${r.date}`;
+    if (!groupedByWorkerDate.has(key)) groupedByWorkerDate.set(key, []);
+    groupedByWorkerDate.get(key)!.push(r);
+  });
+
+  groupedByWorkerDate.forEach(records => {
+    const entrada = records.find(r => r.eventType === "ENTRADA");
+    const salida = records.find(r => r.eventType === "SALIDA");
+    if (entrada && salida) {
+      const diff = (new Date(salida.timestamp).getTime() - new Date(entrada.timestamp).getTime()) / (1000 * 60 * 60);
+      totalHoras += Math.max(0, diff);
+      totalDias++;
+    }
+  });
+
+  const promedioHoras = totalDias > 0 ? totalHoras / totalDias : 0;
+
+  return { total, promedioHoras };
+}
